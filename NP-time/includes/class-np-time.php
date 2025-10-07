@@ -92,7 +92,7 @@ if ( ! function_exists( 'np_time_modal_settings_defaults' ) ) {
 			'weekday_thu'               => '星期四',
 			'weekday_fri'               => '星期五',
 			'weekday_sat'               => '星期六',
-			'date_weekday_format'       => '%s%s日-%s 可配送',
+			'date_weekday_format'       => '%s%s日-%s',
 			// 后端与提示
 			'invalid_choice_message'      => '邮编或所选日期/时间不支持配送',
 			'invalid_tip_type_message'    => '无效的小费类型',
@@ -1624,7 +1624,7 @@ class NP_Time_Plugin {
 		$month_name = $this->get_translated_modal_string( $month_keys[ $month_index ], ( $month_index + 1 ) . '月' );
 		$weekday_name = $this->get_translated_modal_string( $weekday_keys[ $weekday_index ], '星期' );
 
-		$format_template = $this->get_translated_modal_string( 'date_weekday_format', '%s%s日-%s 可配送' );
+		$format_template = $this->get_translated_modal_string( 'date_weekday_format', '%s%s日-%s' );
 		
 		return sprintf( $format_template, $month_name, $day, $weekday_name );
 	}
