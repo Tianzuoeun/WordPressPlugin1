@@ -1,0 +1,63 @@
+/* Ensure datepicker is visible above WP admin UI */
+.ui-datepicker {
+  z-index: 100001 !important;
+  background: #fff !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  border-radius: 12px;
+  padding: 8px 10px 10px;
+  border: 1px solid #e5e7eb;
+}
+.ui-datepicker-header {
+  background: transparent;
+  border: none;
+}
+.ui-datepicker-title {
+  font-weight: 600;
+  color: #111827;
+}
+.ui-datepicker th {
+  color: #6b7280;
+  font-weight: 500;
+}
+.ui-datepicker td {
+  padding: 2px;
+}
+.ui-datepicker td a,
+.ui-datepicker td span {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  border-radius: 8px;
+  color: #111827;
+}
+.ui-datepicker td a:hover {
+  background: #eff6ff !important;
+}
+.ui-datepicker .ui-state-disabled {
+  opacity: .45;
+}
+.ui-datepicker td.selected a,
+.ui-datepicker td.selected span {
+  background: #2563eb !important;
+  color: #fff !important;
+  border-radius: 8px;
+}
+#np-time-date-picker-wrap {
+  margin: 6px 0;
+}
+#np-time-date-input {
+  background: #fff;
+  max-width: 200px;
+}
+#np-time-date-list li {
+  margin: 4px 0;
+}
+#np-time-days-block,
+#np-time-date-block {
+  margin-top: 8px;
+}
+#np-time-datepicker-confirm {
+  margin-left: 8px;
+}

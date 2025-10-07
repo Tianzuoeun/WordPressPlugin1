@@ -1,0 +1,441 @@
+/* Enhanced modal and FAB styles */
+.np-time-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:99999}
+.np-time-modal[aria-hidden="false"]{display:flex}
+.np-time-dialog{background:#fff;border-radius:12px;max-width:520px;width:90%;padding:24px;box-shadow:0 15px 45px rgba(0,0,0,.15);max-height:80vh;overflow-y:auto}
+.np-time-dialog h3{margin:0 0 20px 0;color:#333;font-size:18px;font-weight:600}
+.np-time-form{font-size:14px}
+.np-time-step{padding:12px;border:1px solid #e9ecef;border-radius:8px;background:#f8f9fa}
+.np-time-step label{display:block;margin-bottom:8px;color:#495057;font-weight:500}
+.np-time-step input,.np-time-step select{padding:8px 12px;border:1px solid #ced4da;border-radius:6px;font-size:14px}
+.np-time-step input:focus,.np-time-step select:focus{outline:none;border-color:#007cba;box-shadow:0 0 0 2px rgba(0,124,186,.1)}
+.np-time-hint{font-size:12px;color:#6c757d;margin-top:4px;padding:8px;background:#e7f3ff;border-radius:4px;border-left:3px solid #007cba}
+.np-time-info{margin:12px 0;padding:12px;border-radius:6px;background:#f8f9fa;border:1px solid #e9ecef}
+.np-time-actions{text-align:right;margin-top:20px;padding-top:15px;border-top:1px solid #e9ecef}
+.np-time-actions .button{padding:10px 20px;font-size:var(--np-time-modal-btn-font-size,14px);border-radius:var(--np-time-modal-btn-radius,6px);font-family:var(--np-time-modal-btn-font-family,inherit)}
+.np-time-fab{position:fixed;bottom:16px;border:none;border-radius:28px;padding:12px 16px;cursor:pointer;z-index:99998;font-size:13px;font-weight:500;box-shadow:0 4px 12px rgba(0,124,186,.3);transition:all .2s ease;background:var(--np-time-fab-bg,#007cba);color:var(--np-time-fab-color,#fff);display:inline-flex;align-items:center;gap:8px}
+.np-time-fab--left{left:16px;right:auto}
+.np-time-fab--right{right:16px;left:auto}
+.np-time-fab-icon{display:flex;align-items:center}
+.np-time-fab.has-icon .np-time-fab-icon img{max-height:18px;width:auto;display:block}
+.np-time-fab:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,124,186,.4);filter:brightness(.92)}
+.np-time-fab-text{display:inline-block}
+
+/* Cart totals info block styles */
+#np-time-totals-info {
+  margin-top: 15px;
+  padding: 15px;
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+#np-time-totals-info div {
+  margin-bottom: 8px;
+}
+
+#np-time-totals-info div:last-child {
+  margin-bottom: 0;
+}
+
+.np-time-edit-btn {
+  border: none;
+  background: none;
+  color: #007cba;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 2px 4px;
+  font-size: 14px;
+}
+
+.np-time-edit-btn:hover {
+  color: #005a87;
+}
+
+/* Tip selection styles */
+.np-tip-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.np-tip-btn {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  background: #f8f9fa;
+  color: #333;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.np-tip-btn:hover {
+  border-color: #8bc34a;
+  background: #f1f8e9;
+}
+
+.np-tip-btn.np-tip-selected {
+  background: #8bc34a;
+  color: white;
+  border-color: #8bc34a;
+}
+
+.np-tip-btn.np-tip-refuse {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.np-tip-btn.np-tip-refuse:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+}
+
+.np-tip-btn.np-tip-refuse.np-tip-selected {
+  background: #6c757d;
+  color: white;
+  border-color: #6c757d;
+}
+
+.np-custom-tip-input {
+  display: none;
+  margin-top: 10px;
+}
+
+.np-custom-tip-input input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  width: 120px;
+  font-size: 14px;
+}
+
+.np-custom-tip-input input:focus {
+  outline: none;
+  border-color: #8bc34a;
+  box-shadow: 0 0 0 2px rgba(139, 195, 74, 0.1);
+}
+
+#np-custom-tip-confirm {
+  margin-left: 8px;
+  padding: 8px 15px;
+  background: #8bc34a;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s ease;
+}
+
+#np-custom-tip-confirm:hover {
+  background: #7cb342;
+}
+
+body.np-time-prevent-scroll {
+  overflow: hidden;
+}
+
+.np-time-coupon-trigger {
+  margin-top: 12px;
+  margin-bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  font-weight: 600;
+  border-radius: 999px;
+  background-image: linear-gradient(135deg, #ff9472, #f2709c);
+  border: none;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(242, 112, 156, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.np-time-coupon-trigger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 22px rgba(242, 112, 156, 0.4);
+}
+
+.np-time-coupon-trigger[aria-disabled="true"] {
+  opacity: 0.85;
+}
+
+#np-time-coupon-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+  padding: 24px;
+}
+
+#np-time-coupon-overlay.is-visible {
+  display: flex;
+}
+
+.np-time-coupon-modal {
+  background: #fff;
+  border-radius: 16px;
+  max-width: 540px;
+  width: 100%;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.22);
+  padding: 26px 28px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.np-time-coupon-modal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.2);
+}
+
+.np-time-coupon-heading {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.np-time-coupon-apply {
+  padding: 8px 14px;
+  background: var(--np-time-modal-btn-bg, #10b981);
+  color: var(--np-time-modal-btn-color, #ffffff);
+  border: none;
+  border-radius: var(--np-time-modal-btn-radius, 10px);
+  cursor: pointer;
+  font-weight: 700;
+  font-family: var(--np-time-modal-btn-font-family, inherit);
+  font-size: var(--np-time-modal-btn-font-size, 14px);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.np-time-coupon-apply:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(16, 185, 129, 0.24);
+}
+.np-time-coupon-body::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.6);
+  border-radius: 3px;
+}
+
+.np-time-coupon-status {
+  padding: 24px;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #1d4ed8;
+  text-align: center;
+  font-weight: 500;
+}
+
+.np-time-coupon-list {
+  display: grid;
+  gap: 16px;
+}
+
+.np-time-coupon-card {
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(236, 72, 153, 0.06));
+  display: grid;
+  grid-template-columns: 1fr 160px;
+  gap: 12px;
+  align-items: start;
+  position: relative;
+  overflow: hidden;
+}
+
+.np-time-coupon-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  border: 1px dashed rgba(59, 130, 246, 0.12);
+  pointer-events: none;
+}
+
+/* 左侧主要内容 */
+.np-time-coupon-card .np-time-coupon-amount,
+.np-time-coupon-card .np-time-coupon-code,
+.np-time-coupon-card .np-time-coupon-meta {
+  margin: 0;
+}
+
+/* 右侧容器：有效期与按钮垂直排布，靠右下对齐 */
+.np-time-coupon-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch; /* stretch to full width of right column */
+  justify-content: space-between; /* space between expiry (top) and button (bottom) */
+  gap: 8px;
+  min-height: 70px; /* ensure some space for small cards */
+}
+
+.np-time-coupon-expiry {
+  font-size: 12px;
+  color: #374151;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.np-time-coupon-actions .np-time-coupon-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end; /* keep button at right edge */
+}
+
+.np-time-coupon-apply {
+  padding: 8px 14px;
+  background: linear-gradient(90deg, #ff7a7a, #ff5a9e);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.np-time-coupon-apply:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(255,90,158,0.18);
+}
+
+/* responsive：窄屏回退为垂直布局 */
+@media (max-width: 520px) {
+  .np-time-coupon-card {
+    grid-template-columns: 1fr;
+  }
+  .np-time-coupon-actions {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+  .np-time-coupon-expiry { text-align: left; }
+}
+
+.np-time-coupon-amount {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.np-time-coupon-code {
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #4f46e5;
+  font-size: 0.9rem;
+}
+
+.np-time-coupon-meta p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.np-time-coupon-meta p + p {
+  margin-top: 4px;
+}
+
+.np-time-coupon-expiry {
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.np-time-coupon-limit {
+  color: #2563eb;
+}
+
+.np-time-coupon-apply {
+  align-self: flex-start;
+  border-radius: var(--np-time-modal-btn-radius, 999px);
+  padding: 8px 18px;
+  font-weight: 600;
+  background: var(--np-time-modal-btn-bg, #10b981);
+  border: none;
+  color: var(--np-time-modal-btn-color, #fff);
+  box-shadow: 0 10px 18px rgba(16, 185, 129, 0.24);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  font-family: var(--np-time-modal-btn-font-family, inherit);
+  font-size: var(--np-time-modal-btn-font-size, 14px);
+}
+.np-time-coupon-apply:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 22px rgba(16, 185, 129, 0.32);
+}
+
+.np-time-coupon-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.np-time-coupon-close,
+.np-time-coupon-close-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.np-time-coupon-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-size: 1.4rem;
+}
+
+.np-time-coupon-close:hover,
+.np-time-coupon-close-btn:hover {
+  color: #111827;
+}
+
+.np-time-coupon-close-btn {
+  font-size: 0.95rem;
+  padding: 0 12px;
+  font-weight: 600;
+}
+
+#np-time-coupon-overlay.is-loading .np-time-coupon-modal {
+  opacity: 0.85;
+}
+/* 不可用的优惠券卡片样式 */
+.np-time-coupon-card.coupon-disabled {
+    opacity: 0.7;
+    position: relative;
+}
+
+.np-time-coupon-card.coupon-disabled .np-time-coupon-amount {
+    color: #999;
+}
+
+/* 禁用的按钮样式 */
+.np-time-coupon-apply-disabled {
+    background: #e0e0e0 !important;
+    color: #999 !important;
+    cursor: not-allowed !important;
+    border: 1px solid #d0d0d0 !important;
+    padding: 8px 16px;
+    border-radius: 4px;
+}
+
+.np-time-coupon-apply-disabled:hover {
+    background: #e0e0e0 !important;
+}
+
+/* 不满足条件的提示文字 */
+.np-time-coupon-limit span {
+    font-size: 12px;
+    font-weight: 500;
+}
