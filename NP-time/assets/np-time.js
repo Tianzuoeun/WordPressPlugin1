@@ -62,6 +62,14 @@
   var pendingPrefill = null; // {postcode, date}
   var MODAL_STRINGS = (typeof NP_TIME_DATA !== 'undefined' && NP_TIME_DATA && NP_TIME_DATA.modalStrings) ? NP_TIME_DATA.modalStrings : {};
 
+  // Helper function to get cookie value
+  function getCookie(name) {
+    var value = "; " + document.cookie;
+    var parts = value.split("; " + name + "=");
+    if (parts.length === 2) return parts.pop().split(";").shift();
+    return null;
+  }
+
   function getString(key, fallback){
     var value = MODAL_STRINGS && MODAL_STRINGS[key];
     if (typeof value === 'string' && value.length) {
@@ -807,6 +815,10 @@
   }
   function openModal(){
     $('#np-time-modal').attr('aria-hidden','false');
+    
+    // 设置输入框提示文本
+    $('#np-time-postcode').attr('placeholder', getString('postcode_placeholder', '请输入完整邮编'));
+    
     // 预填用户上次选择（无 setTimeout 竞态）
     try {
       if (NP_TIME_DATA && NP_TIME_DATA.choice) {
@@ -934,11 +946,20 @@
     var postcode = $('#np-time-postcode').val().trim();
     if(!postcode){ 
       $('#np-time-step2').hide();
+      $('#np-time-info').html('');
       return; 
     }
     
-    // 显示加载状态
+    // 检查邮编长度，如果太短则不查询
+    if(postcode.length < 5) {
+      $('#np-time-step2').hide();
+      $('#np-time-info').html('<div style="color:#666;">' + getString('postcode_too_short','请输入完整的邮编（至少5位数字）') + '</div>');
+      return;
+    }
+    
+    // 清空之前的信息，显示加载状态
     $('#np-time-info').html('<div style="color:#666;">' + getString('loading_text','🔍 正在查询邮编配送选项...') + '</div>');
+    $('#np-time-step2').hide(); // 隐藏第二步直到查询完成
     
     $.post(NP_TIME_DATA.ajaxUrl, { action:'np_time_get_options', nonce:NP_TIME_DATA.nonce, postcode:postcode })
     .done(function(res){
@@ -1014,8 +1035,61 @@
     });
   }
 
-  $(document).on('change','#np-time-postcode', loadOptions);
-  $(document).on('keyup','#np-time-postcode', function(){ if(this.value.length>=3){ loadOptions(); } });
+  // 防抖变量
+  var postcodeDebounceTimer = null;
+  var lastPostcodeQuery = '';
+  
+  // 防抖查询函数
+  function debouncedLoadOptions() {
+    if (postcodeDebounceTimer) {
+      clearTimeout(postcodeDebounceTimer);
+    }
+    
+    postcodeDebounceTimer = setTimeout(function() {
+      var postcode = $('#np-time-postcode').val().trim();
+      
+      // 避免重复查询相同的邮编
+      if (postcode === lastPostcodeQuery) {
+        return;
+      }
+      
+      if (postcode.length >= 5) { // 增加最小长度要求
+        lastPostcodeQuery = postcode;
+        loadOptions();
+      } else if (postcode.length === 0) {
+        // 如果清空了输入，隐藏第二步和清空状态
+        $('#np-time-step2').hide();
+        $('#np-time-info').html('');
+        lastPostcodeQuery = '';
+      } else if (postcode.length > 0 && postcode.length < 5) {
+        // 显示长度不足提示
+        $('#np-time-step2').hide();
+        $('#np-time-info').html('<div style="color:#666;">' + getString('postcode_too_short','请输入完整的邮编（至少5位数字）') + '</div>');
+      }
+    }, 1000); // 1秒延迟，给用户更多时间输入
+  }
+  
+  $(document).on('change','#np-time-postcode', function() {
+    // change事件立即触发（失去焦点时）
+    var postcode = $(this).val().trim();
+    if (postcode.length >= 5 && postcode !== lastPostcodeQuery) {
+      if (postcodeDebounceTimer) {
+        clearTimeout(postcodeDebounceTimer);
+        postcodeDebounceTimer = null;
+      }
+      lastPostcodeQuery = postcode;
+      loadOptions();
+    } else if (postcode.length === 0) {
+      $('#np-time-step2').hide();
+      $('#np-time-info').html('');
+      lastPostcodeQuery = '';
+    } else if (postcode.length > 0 && postcode.length < 5) {
+      $('#np-time-step2').hide();
+      $('#np-time-info').html('<div style="color:#666;">' + getString('postcode_too_short','请输入完整的邮编（至少5位数字）') + '</div>');
+    }
+  });
+  
+  $(document).on('keyup input','#np-time-postcode', debouncedLoadOptions);
 
   $(document).on('click','#np-time-continue', function(){
     var postcode=$('#np-time-postcode').val().trim();
@@ -1049,12 +1123,24 @@
           return;
         }
         
+        console.log('NP-Time: 保存成功，响应数据:', res);
+        
         closeModal(); 
         NP_TIME_DATA.hasChoice = true; 
         
+        // 设置sessionStorage标记，以便页面刷新后记住选择状态
+        if (typeof(Storage) !== "undefined") {
+          sessionStorage.setItem('np_time_has_choice', '1');
+          console.log('NP-Time: 已设置sessionStorage标记');
+        }
+        
         // 更新配送选择数据 - 保留现有数据，只更新返回的字段
-        var choice = res.data.choice || res.data;
+        var choice = res.data.choice;
         var dateChanged = false;
+        
+        console.log('NP-Time: 更新前的choice数据:', NP_TIME_DATA.choice);
+        console.log('NP-Time: 服务器返回的完整数据:', res.data);
+        console.log('NP-Time: 解析后的choice数据:', choice);
         
         if (choice) {
           if (!NP_TIME_DATA.choice) {
@@ -1067,10 +1153,13 @@
           
           if (choice.date) {
             // 检查日期是否发生了变化
-            var oldDate = NP_TIME_DATA.choice.date;
+            var oldDate = NP_TIME_DATA.choice ? NP_TIME_DATA.choice.date : null;
             var newDate = String(choice.date);
             if (oldDate && oldDate !== newDate) {
               dateChanged = true;
+              console.log('NP-Time: 日期发生变化，从', oldDate, '到', newDate);
+            } else {
+              console.log('NP-Time: 日期没有变化或首次设置，日期:', newDate);
             }
             NP_TIME_DATA.choice.date = newDate;
           }
@@ -1078,9 +1167,14 @@
         
         // 如果日期发生了变化，刷新页面以更新产品列表
         if (dateChanged) {
+          // 确保Cookie已保存，延长等待时间
           setTimeout(function() {
+            // 重新设置hasChoice标志以确保状态正确
+            if (typeof(Storage) !== "undefined") {
+              sessionStorage.setItem('np_time_has_choice', '1');
+            }
             window.location.reload();
-          }, 500);
+          }, 1000);
           return;
         }
         
@@ -1680,6 +1774,92 @@
 
   // 页面加载时清理用户仪表盘的配送信息元素
   $(document).ready(function() {
+    // 检查页面刷新后的选择状态
+    if (typeof(Storage) !== "undefined" && sessionStorage.getItem('np_time_has_choice') === '1') {
+      // 如果sessionStorage显示用户已选择，更新NP_TIME_DATA状态
+      if (NP_TIME_DATA) {
+        NP_TIME_DATA.hasChoice = true;
+        console.log('NP-Time: Restored choice state from sessionStorage');
+      }
+      // 不清除sessionStorage标记，让它在会话期间持续存在
+    }
+    
+    // 初始检查并显示模态框（如果需要）
+    setTimeout(function() {
+      console.log('NP-Time: 开始初始检查...');
+      console.log('NP-Time: NP_TIME_DATA.gate =', NP_TIME_DATA ? NP_TIME_DATA.gate : 'undefined');
+      console.log('NP-Time: NP_TIME_DATA.hasChoice =', NP_TIME_DATA ? NP_TIME_DATA.hasChoice : 'undefined');
+      
+      if (NP_TIME_DATA && NP_TIME_DATA.gate && !NP_TIME_DATA.hasChoice) {
+        console.log('NP-Time: Gate检查失败，进行Cookie检查...');
+        
+        // 额外的cookie检查，防止PHP端检查失败
+        var cookieValue = getCookie('np_time_choice');
+        console.log('NP-Time: Cookie值 =', cookieValue);
+        
+        if (cookieValue) {
+          try {
+            // 尝试直接解析，如果失败再尝试URL解码
+            var data;
+            try {
+              data = JSON.parse(cookieValue);
+              console.log('NP-Time: Cookie直接解析成功');
+            } catch (e1) {
+              console.log('NP-Time: Cookie直接解析失败，尝试URL解码');
+              data = JSON.parse(decodeURIComponent(cookieValue));
+              console.log('NP-Time: Cookie URL解码后解析成功');
+            }
+            
+            console.log('NP-Time: 解析后的数据 =', data);
+            
+            if (data && data.postcode && data.date) {
+              // 基本格式检查：邮编不为空，日期格式正确
+              var postcode = String(data.postcode).trim();
+              var date = String(data.date).trim();
+              var datePattern = /^\d{4}-\d{2}-\d{2}$/;
+              
+              console.log('NP-Time: 提取的邮编 =', postcode);
+              console.log('NP-Time: 提取的日期 =', date);
+              console.log('NP-Time: 日期格式检查 =', datePattern.test(date));
+              
+              if (postcode && date && datePattern.test(date)) {
+                console.log('NP-Time: JS验证通过，设置hasChoice=true');
+                NP_TIME_DATA.hasChoice = true;
+                
+                // 更新sessionStorage
+                if (typeof(Storage) !== "undefined") {
+                  sessionStorage.setItem('np_time_has_choice', '1');
+                  console.log('NP-Time: 已设置sessionStorage标记');
+                }
+                
+                return; // 不显示模态框
+              } else {
+                console.log('NP-Time: JS验证失败');
+              }
+            } else {
+              console.log('NP-Time: Cookie数据格式错误或缺少字段');
+            }
+          } catch (e) {
+            console.log('NP-Time: Cookie解析错误:', e);
+          }
+        } else {
+          console.log('NP-Time: 没有找到Cookie');
+        }
+        
+        // 如果确实没有有效选择，显示模态框
+        console.log('NP-Time: 没有找到有效选择，将显示模态框');
+        openModal();
+      } else {
+        if (!NP_TIME_DATA) {
+          console.log('NP-Time: NP_TIME_DATA未定义');
+        } else if (!NP_TIME_DATA.gate) {
+          console.log('NP-Time: Gate未启用');
+        } else if (NP_TIME_DATA.hasChoice) {
+          console.log('NP-Time: hasChoice=true，不需要显示模态框');
+        }
+      }
+    }, 500); // 增加延迟到500毫秒，给页面更多时间加载
+    
     var isMyAccountPage = window.location.href.indexOf('/my-account/') !== -1 || 
                           $('.woocommerce-account').length > 0 ||
                           $('.woocommerce-MyAccount-content').length > 0;
@@ -1748,6 +1928,11 @@
         closeModal();
         NP_TIME_DATA.hasChoice = true;
         
+        // 设置sessionStorage标记
+        if (typeof(Storage) !== "undefined") {
+          sessionStorage.setItem('np_time_has_choice', '1');
+        }
+        
         // 更新配送选择数据
         if (res.data && res.data.choice) {
           if (!NP_TIME_DATA.choice) {
@@ -1789,5 +1974,32 @@
       alert(msg);
     });
   }
+
+  // 在页面加载时检查存储的日期
+  $(document).ready(function() {
+      // 检查存储的选择是否过期
+      if (NP_TIME_DATA && NP_TIME_DATA.choice) {
+          var selectedDate = NP_TIME_DATA.choice.date;
+          if (selectedDate) {
+              var today = new Date();
+              today.setHours(0,0,0,0);
+              var selected = new Date(selectedDate.replace(/-/g,'/'));
+              
+              // 如果选择的日期是今天或之前，强制重新选择
+              if (selected <= today) {
+                  console.log('NP-Time: 选择的日期已过期，需要重新选择');
+                  NP_TIME_DATA.hasChoice = false;
+                  NP_TIME_DATA.choice = null;
+                  // 清除本地存储
+                  localStorage.removeItem('np_time_choice');
+                  sessionStorage.removeItem('np_time_choice');
+                  // 如果启用了gate，显示选择弹窗
+                  if (NP_TIME_DATA.gate) {
+                      openModal();
+                  }
+              }
+          }
+      }
+  });
 
 })(jQuery);

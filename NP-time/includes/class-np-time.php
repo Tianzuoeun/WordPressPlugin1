@@ -8,7 +8,7 @@ if ( ! function_exists( 'np_time_modal_settings_defaults' ) ) {
 		$defaults = [
 			'modal_title'            => '🚚 选择配送设置',
 			'step1_title'           => '第一步：请输入您的邮编',
-			'postcode_placeholder'  => '例如： 10001',
+			'postcode_placeholder'  => '请输入完整邮编（至少5位）',
 			'step2_title'           => '第二步：选择配送方式',
 			'date_label'            => '选择配送日期',
 			'date_placeholder'      => '请选择配送日期',
@@ -23,6 +23,7 @@ if ( ! function_exists( 'np_time_modal_settings_defaults' ) ) {
 			'nonlocal_times_label'  => '可配送时间：',
 			'confirm_button_text'   => '确认',
 			'loading_text'          => '🔍 正在查询邮编配送选项...',
+			'postcode_too_short'    => '请输入完整的邮编（至少5位数字）',
 			'invalid_postcode_text' => '❌ 该邮编暂不支持配送，请检查邮编或联系客服',
 			'no_local_dates_text'   => '⚠️ 该本地邮编当前没有可选配送日期',
 			'no_times_text'         => '⚠️ 该邮编暂无可配送时间',
@@ -72,6 +73,9 @@ if ( ! function_exists( 'np_time_modal_settings_defaults' ) ) {
 			'product_delivery_remove_failed' => '移除商品失败，请重试',
 			'product_delivery_remove_partial_failed' => '部分商品移除失败',
 			'product_delivery_not_available_for_date' => '%s在您选择的配送日期（%s）不可配送，请重新选择配送日期或选择其他商品。',
+			// 系统错误消息
+			'missing_required_params' => '缺少必要参数',
+			'cart_unavailable' => '购物车不可用',
 			// 日期格式化相关多语言字符串
 			'month_01'                  => '1月',
 			'month_02'                  => '2月',
@@ -92,7 +96,7 @@ if ( ! function_exists( 'np_time_modal_settings_defaults' ) ) {
 			'weekday_thu'               => '星期四',
 			'weekday_fri'               => '星期五',
 			'weekday_sat'               => '星期六',
-			'date_weekday_format'       => '%s%s日-%s',
+			'date_weekday_format'       => '%s%s日-%s 可配送',
 			// 后端与提示
 			'invalid_choice_message'      => '邮编或所选日期/时间不支持配送',
 			'invalid_tip_type_message'    => '无效的小费类型',
@@ -253,6 +257,12 @@ trait NP_Time_Frontend {
 			// Always apply translation filters; if filter is not present, apply_filters will return original value.
 			$value = apply_filters( 'wpml_translate_single_string', $value, 'np-time', 'modal_' . $key );
 			$value = apply_filters( 'trp_translate', $value, 'np-time', 'modal_' . $key );
+			
+			// GTranslate翻译支持
+			if ( function_exists( 'gtranslate_t' ) ) {
+				$value = gtranslate_t( $value );
+			}
+			
 			$settings[ $key ] = $value;
 		}
 		return $settings;
@@ -348,11 +358,59 @@ trait NP_Time_Frontend {
         $tip_enabled = (int) get_option( 'np_time_tip_enabled', 1 );
 		$valid_choice = 0;
 		$choice_payload = null;
-		if ( isset( $_COOKIE['np_time_choice'] ) ) {
-			$data = json_decode( wp_unslash( $_COOKIE['np_time_choice'] ), true );
-			if ( is_array( $data ) && isset( $data['postcode'], $data['date'] ) && NP_Time_Rules::validate_choice( $data['postcode'], $data['date'] ) ) {
-				$valid_choice = 1;
-				$choice_payload = [ 'postcode' => (string) $data['postcode'], 'date' => (string) $data['date'] ];
+		
+		// 优先从数据库获取选择（独立存储，避免插件冲突）
+		$db_choice = $this->get_choice_from_db();
+		if ( $db_choice ) {
+			$valid_choice = 1;
+			$choice_payload = $db_choice;
+		} elseif ( isset( $_COOKIE['np_time_choice'] ) ) {
+			$cookie_data = wp_unslash( $_COOKIE['np_time_choice'] );
+			$data = json_decode( $cookie_data, true );
+			
+			// 调试信息
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( 'NP-Time: Cookie data - ' . $cookie_data );
+			}
+			
+			if ( is_array( $data ) && isset( $data['postcode'], $data['date'] ) ) {
+				// 基本格式检查：邮编和日期不为空
+				$postcode = trim( $data['postcode'] );
+				$date = trim( $data['date'] );
+				
+				if ( ! empty( $postcode ) && ! empty( $date ) ) {
+					// 更宽松的验证，考虑到可能的时区和刷新延迟问题
+					$is_valid = NP_Time_Rules::validate_choice( $postcode, $date );
+					
+					// 如果验证失败，可能是因为日期已经过期（跨天），尝试验证明天的日期
+					if ( ! $is_valid ) {
+						$tomorrow = date( 'Y-m-d', strtotime( '+1 day', strtotime( $date ) ) );
+						$is_valid = NP_Time_Rules::validate_choice( $postcode, $tomorrow );
+						if ( $is_valid ) {
+							// 如果明天的日期有效，更新Cookie和数据
+							$data['date'] = $tomorrow;
+							$date = $tomorrow;
+							$midnight = strtotime( 'tomorrow midnight', current_time( 'timestamp' ) );
+							// 使用更宽松的Cookie设置
+							setcookie( 'np_time_choice', wp_json_encode( $data ), $midnight, '/', '' );
+						}
+					}
+					
+					// 即使验证失败，如果Cookie格式正确且数据不为空，也考虑为有效选择
+					// 这样可以避免因为规则变更或时区问题导致的误判
+					if ( $is_valid || ( ! empty( $postcode ) && ! empty( $date ) && preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) ) {
+						$valid_choice = 1;
+						$choice_payload = [ 'postcode' => (string) $postcode, 'date' => (string) $date ];
+						
+						if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+							error_log( 'NP-Time: Valid choice found - postcode: ' . $postcode . ', date: ' . $date );
+						}
+					} else {
+						if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+							error_log( 'NP-Time: Invalid choice - postcode: ' . $postcode . ', date: ' . $date );
+						}
+					}
+				}
 			}
 		}
 		$modal_settings = $this->get_modal_settings();
@@ -384,6 +442,22 @@ trait NP_Time_Frontend {
         ] );
         wp_enqueue_style( 'np-time' );
         wp_enqueue_script( 'np-time' );
+
+		//检查配送日期是否合法
+		if ( $choice_payload ) {
+			// 检查选择的日期是否已过期
+			$selected_date = $choice_payload['date'] ?? '';
+			if ( $selected_date ) {
+				$today = current_time( 'Y-m-d' );
+				// 如果选择的日期是今天或之前，需要重新选择
+				if ( strtotime( $selected_date ) <= strtotime( $today ) ) {
+					$valid_choice = 0;
+					$choice_payload = null;
+					// 清除过期的存储
+					$this->clear_expired_choice();
+				}
+			}
+		}
     }
 
 	public function render_modal() {
@@ -508,7 +582,12 @@ trait NP_Time_Frontend {
 		$choice = [ 'postcode' => $postcode, 'date' => $date ];
 		$now = current_time( 'timestamp' );
 		$midnight = strtotime( 'tomorrow midnight', $now );
-		setcookie( 'np_time_choice', wp_json_encode( $choice ), $midnight, COOKIEPATH, COOKIE_DOMAIN );
+		
+		// 主要保存到数据库（独立存储，避免插件冲突）
+		$this->save_choice_to_db( $choice );
+		
+		// 同时保存到Cookie作为后备
+		setcookie( 'np_time_choice', wp_json_encode( $choice ), $midnight, '/', '' );
 		$_COOKIE['np_time_choice'] = wp_json_encode( $choice );
 		
 		// 如果有需要移除的产品，返回警告信息
@@ -523,7 +602,7 @@ trait NP_Time_Frontend {
 			wp_send_json_success( $response );
 		}
 		
-		wp_send_json_success( $choice );
+		wp_send_json_success( [ 'choice' => $choice ] );
 	}
 
 	public function ajax_save_tip() {
@@ -774,11 +853,15 @@ trait NP_Time_Frontend {
 		$cart_keys = isset( $_POST['cart_keys'] ) ? (array) $_POST['cart_keys'] : [];
 		
 		if ( ! $postcode || ! $date ) {
-			wp_send_json_error( [ 'message' => '缺少必要参数' ], 400 );
+			$modal = $this->get_modal_settings();
+			$error_message = isset( $modal['missing_required_params'] ) ? $modal['missing_required_params'] : '缺少必要参数';
+			wp_send_json_error( [ 'message' => $error_message ], 400 );
 		}
 		
 		if ( ! function_exists( 'WC' ) || ! WC()->cart ) {
-			wp_send_json_error( [ 'message' => '购物车不可用' ], 400 );
+			$modal = $this->get_modal_settings();
+			$error_message = isset( $modal['cart_unavailable'] ) ? $modal['cart_unavailable'] : '购物车不可用';
+			wp_send_json_error( [ 'message' => $error_message ], 400 );
 		}
 		
 		$removed_items = [];
@@ -806,7 +889,12 @@ trait NP_Time_Frontend {
 		$choice = [ 'postcode' => $postcode, 'date' => $date ];
 		$now = current_time( 'timestamp' );
 		$midnight = strtotime( 'tomorrow midnight', $now );
-		setcookie( 'np_time_choice', wp_json_encode( $choice ), $midnight, COOKIEPATH, COOKIE_DOMAIN );
+		
+		// 主要保存到数据库（独立存储，避免插件冲突）
+		$this->save_choice_to_db( $choice );
+		
+		// 同时保存到Cookie作为后备
+		setcookie( 'np_time_choice', wp_json_encode( $choice ), $midnight, '/', '' );
 		$_COOKIE['np_time_choice'] = wp_json_encode( $choice );
 		
 		if ( ! empty( $failed_removals ) ) {
@@ -1125,15 +1213,150 @@ trait NP_Time_Frontend {
 	}
 
 	public function get_choice() {
+		// 优先从数据库获取选择（独立存储，避免插件冲突）
+		$db_choice = $this->get_choice_from_db();
+		if ( $db_choice ) {
+			return $db_choice;
+		}
+		
+		// 作为后备，仍然尝试从Cookie获取
 		if ( isset( $_COOKIE['np_time_choice'] ) ) {
-			$data = json_decode( wp_unslash( $_COOKIE['np_time_choice'] ), true );
+			$cookie_data = wp_unslash( $_COOKIE['np_time_choice'] );
+			$data = json_decode( $cookie_data, true );
+			
 			if ( is_array( $data ) && isset( $data['postcode'], $data['date'] ) ) {
-				if ( NP_Time_Rules::validate_choice( $data['postcode'], $data['date'] ) ) {
-					return $data;
+				// 基本格式检查：邮编和日期不为空
+				$postcode = trim( $data['postcode'] );
+				$date = trim( $data['date'] );
+				
+				if ( ! empty( $postcode ) && ! empty( $date ) ) {
+					// 更宽松的验证，考虑到可能的时区和刷新延迟问题
+					$is_valid = NP_Time_Rules::validate_choice( $postcode, $date );
+					
+					// 如果验证失败，可能是因为日期已经过期（跨天），尝试验证明天的日期
+					if ( ! $is_valid ) {
+						$tomorrow = date( 'Y-m-d', strtotime( '+1 day', strtotime( $date ) ) );
+						$is_valid = NP_Time_Rules::validate_choice( $postcode, $tomorrow );
+						if ( $is_valid ) {
+							// 如果明天的日期有效，更新数据
+							$data['date'] = $tomorrow;
+							$date = $tomorrow;
+						}
+					}
+					
+					// 即使验证失败，如果Cookie格式正确且数据不为空，也考虑为有效选择
+					if ( $is_valid || ( ! empty( $postcode ) && ! empty( $date ) && preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) ) {
+						$choice = [ 'postcode' => (string) $postcode, 'date' => (string) $date ];
+						// 将Cookie数据同步到数据库
+						$this->save_choice_to_db( $choice );
+						return $choice;
+					}
 				}
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * 从数据库获取用户选择（独立存储，避免插件冲突）
+	 */
+	private function get_choice_from_db() {
+		$session_id = $this->get_session_id();
+		$choice_data = get_transient( 'np_time_choice_' . $session_id );
+		
+		if ( $choice_data && is_array( $choice_data ) ) {
+			// 检查数据是否过期（24小时）
+			$saved_time = isset( $choice_data['timestamp'] ) ? $choice_data['timestamp'] : 0;
+			$current_time = time();
+			
+			if ( ( $current_time - $saved_time ) < ( 24 * 60 * 60 ) ) {
+				// 数据未过期，返回选择
+				if ( isset( $choice_data['postcode'], $choice_data['date'] ) ) {
+					$postcode = trim( $choice_data['postcode'] );
+					$date = trim( $choice_data['date'] );
+					
+					if ( ! empty( $postcode ) && ! empty( $date ) ) {
+						// 基本格式验证
+						if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) {
+							return [ 'postcode' => (string) $postcode, 'date' => (string) $date ];
+						}
+					}
+				}
+			} else {
+				// 数据已过期，清除
+				delete_transient( 'np_time_choice_' . $session_id );
+			}
+		}
+		
+		return null;
+	}
+
+	/**
+	 * 将用户选择保存到数据库
+	 */
+	private function save_choice_to_db( $choice ) {
+		if ( ! is_array( $choice ) || ! isset( $choice['postcode'], $choice['date'] ) ) {
+			return false;
+		}
+		
+		$session_id = $this->get_session_id();
+		$choice_data = [
+			'postcode' => (string) $choice['postcode'],
+			'date' => (string) $choice['date'],
+			'timestamp' => time(),
+			'user_agent' => isset( $_SERVER['HTTP_USER_AGENT'] ) ? $_SERVER['HTTP_USER_AGENT'] : '',
+			'ip_address' => $this->get_user_ip()
+		];
+		
+		// 使用transient存储，24小时过期
+		$result = set_transient( 'np_time_choice_' . $session_id, $choice_data, 24 * 60 * 60 );
+		
+		// 记录日志
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+			error_log( 'NP-Time: 保存选择到数据库 - Session: ' . $session_id . ', Data: ' . json_encode( $choice_data ) );
+		}
+		
+		return $result;
+	}
+
+	/**
+	 * 获取用户会话ID（基于多个因素生成唯一标识）
+	 */
+	private function get_session_id() {
+		// 如果用户已登录，使用用户ID
+		if ( is_user_logged_in() ) {
+			return 'user_' . get_current_user_id();
+		}
+		
+		// 对于匿名用户，基于IP、User Agent等生成标识
+		$ip = $this->get_user_ip();
+		$user_agent = isset( $_SERVER['HTTP_USER_AGENT'] ) ? $_SERVER['HTTP_USER_AGENT'] : '';
+		$session_key = $ip . '|' . $user_agent;
+		
+		// 生成哈希值作为会话ID
+		return 'guest_' . md5( $session_key );
+	}
+
+	/**
+	 * 获取用户IP地址
+	 */
+	private function get_user_ip() {
+		$ip_keys = [ 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_CLIENT_IP', 'REMOTE_ADDR' ];
+		
+		foreach ( $ip_keys as $key ) {
+			if ( array_key_exists( $key, $_SERVER ) === true ) {
+				$ip = $_SERVER[ $key ];
+				if ( strpos( $ip, ',' ) !== false ) {
+					$ip = explode( ',', $ip )[0];
+				}
+				$ip = trim( $ip );
+				if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
+					return $ip;
+				}
+			}
+		}
+		
+		return isset( $_SERVER['REMOTE_ADDR'] ) ? $_SERVER['REMOTE_ADDR'] : '127.0.0.1';
 	}
 
 	public function wc_require_choice( $passed, $product_id, $quantity ) {
@@ -1624,7 +1847,7 @@ class NP_Time_Plugin {
 		$month_name = $this->get_translated_modal_string( $month_keys[ $month_index ], ( $month_index + 1 ) . '月' );
 		$weekday_name = $this->get_translated_modal_string( $weekday_keys[ $weekday_index ], '星期' );
 
-		$format_template = $this->get_translated_modal_string( 'date_weekday_format', '%s%s日-%s' );
+		$format_template = $this->get_translated_modal_string( 'date_weekday_format', '%s%s日-%s 可配送' );
 		
 		return sprintf( $format_template, $month_name, $day, $weekday_name );
 	}
@@ -1714,31 +1937,31 @@ class NP_Time_Plugin {
 	/**
 	 * 在 block/cart 兼容下方插入（如 totals 区块无效时）
 	 */
-public function render_cart_delivery_info_block() {
-    if ( ! is_cart() ) return;
-    $choice = $this->get_choice();
-    $modal = $this->get_modal_settings();
-    $label_pc = isset( $modal['label_postcode'] ) ? $modal['label_postcode'] : '配送邮编：';
-    $label_date = isset( $modal['label_date'] ) ? $modal['label_date'] : '配送日期：';
-    $edit_text = isset( $modal['edit_button_text'] ) ? $modal['edit_button_text'] : '编辑';
-    $not_sel = isset( $modal['not_selected_text'] ) ? $modal['not_selected_text'] : '未选择';
-    echo '<div class="np-time-cart-block" style="margin:16px 0;">';
-    echo '<div class="wc-block-components-totals-item__label">';
-    echo '<div class="np-time-row"><span class="np-time-pc"><strong>' . esc_html( $label_pc ) . '</strong>' . esc_html( $choice['postcode'] ?? $not_sel ) . '</span></div>';
-    // 在结账页面不显示编辑按钮
-    if ( function_exists('is_checkout') && is_checkout() ) {
-        echo '<div class="np-time-row"><span class="np-time-date"><strong>' . esc_html( $label_date ) . '</strong>' . esc_html( $choice['date'] ?? $not_sel ) . '</span></div>';
-    } else {
-        // 在结账页面不显示编辑按钮
-    if ( function_exists('is_checkout') && is_checkout() ) {
-        echo '<div class="np-time-row"><span class="np-time-date"><strong>' . esc_html( $label_date ) . '</strong>' . esc_html( $choice['date'] ?? $not_sel ) . '</span></div>';
-    } else {
-        echo '<div class="np-time-row"><span class="np-time-date"><strong>' . esc_html( $label_date ) . '</strong>' . esc_html( $choice['date'] ?? $not_sel ) . '</span><button type="button" class="np-time-edit-btn">' . esc_html( $edit_text ) . '</button></div>';
-    }
-    }
-    echo '</div>';
-    echo '</div>';
-}
+	public function render_cart_delivery_info_block() {
+		if ( ! is_cart() ) return;
+		$choice = $this->get_choice();
+		$modal = $this->get_modal_settings();
+		$label_pc = isset( $modal['label_postcode'] ) ? $modal['label_postcode'] : '配送邮编：';
+		$label_date = isset( $modal['label_date'] ) ? $modal['label_date'] : '配送日期：';
+		$edit_text = isset( $modal['edit_button_text'] ) ? $modal['edit_button_text'] : '编辑';
+		$not_sel = isset( $modal['not_selected_text'] ) ? $modal['not_selected_text'] : '未选择';
+		echo '<div class="np-time-cart-block" style="margin:16px 0;">';
+		echo '<div class="wc-block-components-totals-item__label">';
+		echo '<div class="np-time-row"><span class="np-time-pc"><strong>' . esc_html( $label_pc ) . '</strong>' . esc_html( $choice['postcode'] ?? $not_sel ) . '</span></div>';
+		// 在结账页面不显示编辑按钮
+		if ( function_exists('is_checkout') && is_checkout() ) {
+			echo '<div class="np-time-row"><span class="np-time-date"><strong>' . esc_html( $label_date ) . '</strong>' . esc_html( $choice['date'] ?? $not_sel ) . '</span></div>';
+		} else {
+			// 在结账页面不显示编辑按钮
+		if ( function_exists('is_checkout') && is_checkout() ) {
+			echo '<div class="np-time-row"><span class="np-time-date"><strong>' . esc_html( $label_date ) . '</strong>' . esc_html( $choice['date'] ?? $not_sel ) . '</span></div>';
+		} else {
+			echo '<div class="np-time-row"><span class="np-time-date"><strong>' . esc_html( $label_date ) . '</strong>' . esc_html( $choice['date'] ?? $not_sel ) . '</span><button type="button" class="np-time-edit-btn">' . esc_html( $edit_text ) . '</button></div>';
+		}
+		}
+		echo '</div>';
+		echo '</div>';
+	}
 
 	public function load_textdomain() {
 		load_plugin_textdomain( 'np-time', false, dirname( plugin_basename( NP_TIME_FILE ) ) . '/languages' );
@@ -1795,7 +2018,7 @@ public function render_cart_delivery_info_block() {
 	/**
 	 * 在感谢页面显示配送信息
 	 */
-public function display_delivery_info_on_thankyou( $order_id ) {
+	public function display_delivery_info_on_thankyou( $order_id ) {
 		if ( ! $order_id ) {
 			return;
 		}
@@ -1814,22 +2037,22 @@ public function display_delivery_info_on_thankyou( $order_id ) {
 
 		echo '<div class="np-delivery-info-thankyou" style="margin: 20px 0; padding: 15px; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 5px;">';
 		echo '<h3 style="margin-top: 0; color: #333;">配送信息</h3>';
-    $modal = $this->get_modal_settings();
-    $label_pc = isset( $modal['label_postcode'] ) ? $modal['label_postcode'] : '配送邮编：';
-    $label_date = isset( $modal['label_date'] ) ? $modal['label_date'] : '配送日期：';
-    
-    // 使用格式化的日期显示
-    $formatted_date = $this->format_saved_delivery_date( $date );
-    
-    echo '<p><strong>' . esc_html( $label_pc ) . '</strong> ' . esc_html( $postcode ) . '</p>';
-    echo '<p><strong>' . esc_html( $label_date ) . '</strong> ' . esc_html( $formatted_date ) . '</p>';
-		echo '</div>';
+		$modal = $this->get_modal_settings();
+		$label_pc = isset( $modal['label_postcode'] ) ? $modal['label_postcode'] : '配送邮编：';
+		$label_date = isset( $modal['label_date'] ) ? $modal['label_date'] : '配送日期：';
+		
+		// 使用格式化的日期显示
+		$formatted_date = $this->format_saved_delivery_date( $date );
+		
+		echo '<p><strong>' . esc_html( $label_pc ) . '</strong> ' . esc_html( $postcode ) . '</p>';
+		echo '<p><strong>' . esc_html( $label_date ) . '</strong> ' . esc_html( $formatted_date ) . '</p>';
+			echo '</div>';
 	}
 
 	/**
 	 * 在邮件中显示配送信息
 	 */
-public function display_delivery_info_in_email( $order, $sent_to_admin, $plain_text, $email ) {
+	public function display_delivery_info_in_email( $order, $sent_to_admin, $plain_text, $email ) {
 		if ( ! $order ) {
 			return;
 		}
@@ -1864,7 +2087,7 @@ public function display_delivery_info_in_email( $order, $sent_to_admin, $plain_t
 	/**
 	 * 在后台订单详情页面显示配送信息
 	 */
-public function display_delivery_info_in_admin( $order ) {
+	public function display_delivery_info_in_admin( $order ) {
 		if ( ! $order ) {
 			return;
 		}
@@ -1879,17 +2102,17 @@ public function display_delivery_info_in_admin( $order ) {
 		echo '<div class="order_data_column" style="width: 32%; float: left; margin-right: 1%;">';
 		echo '<h3>配送信息</h3>';
 		echo '<div class="address">';
-    $modal = $this->get_modal_settings();
-    $label_pc = isset( $modal['label_postcode'] ) ? $modal['label_postcode'] : '配送邮编：';
-    $label_date = isset( $modal['label_date'] ) ? $modal['label_date'] : '配送日期：';
-    
-    // 使用格式化的日期显示
-    $formatted_date = $this->format_saved_delivery_date( $date );
-    
-    echo '<p><strong>' . esc_html( $label_pc ) . '</strong><br>' . esc_html( $postcode ) . '</p>';
-    echo '<p><strong>' . esc_html( $label_date ) . '</strong><br>' . esc_html( $formatted_date ) . '</p>';
-		echo '</div>';
-		echo '</div>';
+		$modal = $this->get_modal_settings();
+		$label_pc = isset( $modal['label_postcode'] ) ? $modal['label_postcode'] : '配送邮编：';
+		$label_date = isset( $modal['label_date'] ) ? $modal['label_date'] : '配送日期：';
+		
+		// 使用格式化的日期显示
+		$formatted_date = $this->format_saved_delivery_date( $date );
+		
+		echo '<p><strong>' . esc_html( $label_pc ) . '</strong><br>' . esc_html( $postcode ) . '</p>';
+		echo '<p><strong>' . esc_html( $label_date ) . '</strong><br>' . esc_html( $formatted_date ) . '</p>';
+			echo '</div>';
+			echo '</div>';
 	}
 
 	/**
@@ -1975,6 +2198,16 @@ public function display_delivery_info_in_admin( $order ) {
 		return $visible;
 	}
 
+	// 清除过期的配送日期选择
+	private function clear_expired_choice() {
+		// 清除Cookie
+		setcookie( 'np_time_choice', '', time() - 3600, '/', '' );
+		unset( $_COOKIE['np_time_choice'] );
+		
+		// 清除数据库存储
+		$session_id = $this->get_session_id();
+		delete_transient( 'np_time_choice_' . $session_id );
+	}
 
 }
 

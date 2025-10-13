@@ -422,6 +422,9 @@ class NP_Time_Admin {
             'product_delivery_remove_failed' => [ 'label' => '产品配送：移除失败提示', 'type' => 'text' ],
             'product_delivery_remove_partial_failed' => [ 'label' => '产品配送：部分移除失败提示', 'type' => 'text' ],
             'product_delivery_not_available_for_date' => [ 'label' => '产品配送：商品不可配送提示（%s商品名 %s日期）', 'type' => 'textarea' ],
+            // 系统错误消息
+            'missing_required_params' => [ 'label' => '系统错误：缺少必要参数', 'type' => 'text' ],
+            'cart_unavailable' => [ 'label' => '系统错误：购物车不可用', 'type' => 'text' ],
             // 弹窗按钮样式
             'modal_button_bg'           => [ 'label' => '弹窗按钮背景颜色', 'type' => 'text' ],
             'modal_button_text_color'   => [ 'label' => '弹窗按钮文字颜色', 'type' => 'text' ],
@@ -569,6 +572,8 @@ class NP_Time_Admin {
             'product_delivery_remove_success',
             'product_delivery_remove_failed',
             'product_delivery_remove_partial_failed',
+            'missing_required_params',
+            'cart_unavailable',
         ];
 
         foreach ( $text_fields as $field ) {
