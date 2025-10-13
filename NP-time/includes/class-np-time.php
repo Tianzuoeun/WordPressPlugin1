@@ -569,6 +569,26 @@ trait NP_Time_Frontend {
 			if ( $offset < 1 ) { $offset = 1; }
 			$target = strtotime( "+$offset day", $now );
 			$date = date_i18n( 'Y-m-d', $target );
+			// —— 周四线路兜底：若当前为“周三12:30之后”，不要把 date 设为“本周四”，而是“下周四”
+			if ($weekday === 4) {
+				// 只在“该邮编的规则确实包含周四”时启用兜底
+				$rule = NP_Time_Rules::match_postcode_rule( $postcode ); // 你们已有的匹配函数
+				$daysOfWeek = isset($rule['daysOfWeek']) ? array_map('intval', (array)$rule['daysOfWeek']) : [];
+				if (in_array(4, $daysOfWeek, true)) {
+					$todayDow = (int) date_i18n('w', $now); // 0=Sun...6=Sat
+					if ($todayDow === 3) { // 周三
+						$hour = (int) date_i18n('G', $now);
+						$min  = (int) date_i18n('i', $now);
+						if ($hour > 12 || ($hour === 12 && $min >= 30)) {
+							// 如果推导出的就是明天（本周四），则再推 7 天到下周四
+							$tomorrow = date_i18n('Y-m-d', strtotime('+1 day', $now));
+							if ($date === $tomorrow) {
+								$date = date_i18n('Y-m-d', strtotime('+8 day', $now)); // 明天+7天=下周四
+							}
+						}
+					}
+				}
+			}
 		}
 		if ( ! NP_Time_Rules::validate_choice( $postcode, $date ) ) {
 			$modal = $this->get_modal_settings();
@@ -2303,6 +2323,22 @@ class NP_Time_Rules {
 		$specificDates = isset( $rule['dates'] ) ? (array) $rule['dates'] : [];
 		$out = [];
 		$today = current_time( 'timestamp' );
+
+		// —— Austin 特殊：命中“周四线路(4)”时，若周三12:30之后则跳过“本周四” —— 
+		$skipDateForThursday = null;
+		if (in_array(4, $daysOfWeek, true)) {
+			$todayDow = (int) date_i18n('w', $today); // 0=Sun...6=Sat
+			// 只有“今天是周三”才需要考虑“周三12:30截本周四”
+			if ($todayDow === 3) { // 3 = Wednesday
+				$hour = (int) date_i18n('G', $today); // 24小时制 0-23
+				$min  = (int) date_i18n('i', $today);
+				// >= 12:30 视为已截单，跳过“明天（本周四）”
+				if ($hour > 12 || ($hour === 12 && $min >= 30)) {
+					$skipDateForThursday = date_i18n('Y-m-d', strtotime('+1 day', $today)); // 明天
+				}
+			}
+		}
+
 		// 从“明天”开始构建，排除当天
 		for ( $i = 1; $i <= $days; $i++ ) {
 			$ts = strtotime( "+$i day", $today );
@@ -2315,7 +2351,14 @@ class NP_Time_Rules {
 			if ( $specificDates ) {
 				$ok = in_array( $date, $specificDates, true ) || $ok;
 			}
-			if ( $ok ) $out[] = $date;
+			// 若命中“周四线路”且已过周三12:30，则跳过“本周四”
+			if ($ok) {
+				if ($skipDateForThursday && $date === $skipDateForThursday && in_array(4, $daysOfWeek, true)) {
+					// 跳过本周四，不加入
+				} else {
+					$out[] = $date;
+				}
+			}
 		}
 		return array_values( array_unique( $out ) );
 	}
