@@ -83,6 +83,9 @@
     var i = 0;
     return s.replace(/%s/g, function(){ return (i < args.length) ? args[i++] : ''; });
   }
+  function isIsoDate(val){
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(val||''));
+  }
 
   function applyTipSelectionUI(selection) {
     if (!selection) {
@@ -843,31 +846,35 @@
       }
     } else {
       info += '<div style="color:#0d6efd;">'+getString('nonlocal_title','🚛 非本地配送区域')+'</div>';
-      if(Array.isArray(data.daysOfWeek) && data.daysOfWeek.length > 0){
-        // 生成带日期的可配送时间列表
+      // 优先用后端 dates（已包含“周三12:30后跳过本周四”等规则）
+      if (Array.isArray(data.dates) && data.dates.length > 0) {
+        var list = [];
+        data.dates.forEach(function(ds){
+          if (!isIsoDate(ds)) return;
+          var d = new Date(String(ds).replace(/-/g,'/'));
+          if (!isNaN(d.getTime())) list.push(formatDateDisplay(d, d.getDay()));
+        });
+        if (list.length) {
+          info += '<div style="color:#666;font-size:12px;">'
+                + getString('nonlocal_times_label','可配送时间：') + '<br>' + list.join('<br>')
+                + '</div>';
+        }
+      } else if (Array.isArray(data.daysOfWeek) && data.daysOfWeek.length > 0) {
+        // 兼容：没有 dates 时退回旧逻辑（用未来7天本地推算）
         var today = new Date();
         var timesList = [];
-        
-        // 查找接下来7天内符合条件的日期
-        for (var i = 0; i < 7; i++) {
+        for (var i = 1; i <= 7; i++) {
           var futureDate = new Date(today);
           futureDate.setDate(today.getDate() + i);
           var dayOfWeek = futureDate.getDay();
-          
           if (data.daysOfWeek.indexOf(dayOfWeek) !== -1 || data.daysOfWeek.indexOf(String(dayOfWeek)) !== -1) {
             timesList.push(formatDateDisplay(futureDate, dayOfWeek));
           }
         }
-        
-        // 如果没有找到具体日期，降级到原来的显示方式
-        if (timesList.length === 0) {
-          var names=['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
-          var list=data.daysOfWeek.map(function(d){
-            var n=parseInt(d,10); if(isNaN(n)) return d; var idx=(n===0?0:(n%7)); return names[idx]||d;
-          }).join('、');
-          info += '<div style="color:#666;font-size:12px;">'+getString('nonlocal_times_label','可配送时间：')+list+'</div>';
-        } else {
-          info += '<div style="color:#666;font-size:12px;">'+getString('nonlocal_times_label','可配送时间：')+'<br>'+timesList.join('<br>')+'</div>';
+        if (timesList.length) {
+          info += '<div style="color:#666;font-size:12px;">'
+                + getString('nonlocal_times_label','可配送时间：') + '<br>' + timesList.join('<br>')
+                + '</div>';
         }
       }
     }
@@ -907,37 +914,41 @@
     return formatString('date_weekday_format', '%s%s日-%s 可配送', month, day, weekday);
   }
 
-  function populateWeekdays(days){
+  function populateWeekdays(days, dates){
     var $w=$('#np-time-weekday').prop('disabled',false).empty();
     $w.append($('<option/>',{value:'',text:getString('weekday_placeholder','请选择配送的时间')}));
     var names=['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
     
-    // 计算从明天开始的7天日期，确保不包含今天和之前的日期
+    // ① 优先使用后端 dates（注意：value 直接用具体日期）
+    if (Array.isArray(dates) && dates.length > 0) {
+      dates.forEach(function(ds){
+        if (!isIsoDate(ds)) return;
+        var d = new Date(String(ds).replace(/-/g,'/'));
+        if (isNaN(d.getTime())) return;
+        var txt = formatDateDisplay(d, d.getDay());
+        $w.append($('<option/>',{ value: ds, text: txt, 'data-weekday': String(d.getDay()) }));
+      });
+      return; // 有 dates 就直接返回
+    }
+
+    // ② 兼容：没有 dates 时，按 days 本地推算未来7天
     var today = new Date();
-    var dateOptions = [];
     for (var i = 1; i <= 7; i++) {
       var futureDate = new Date(today);
       futureDate.setDate(today.getDate() + i);
-      var dayOfWeek = futureDate.getDay();
-      if ((days || []).indexOf(dayOfWeek) !== -1 || (days || []).indexOf(String(dayOfWeek)) !== -1) {
-        dateOptions.push({
-          value: dayOfWeek,
-          date: futureDate,
-          text: formatDateDisplay(futureDate, dayOfWeek)
-        });
+      var dow = futureDate.getDay();
+      if ((days || []).indexOf(dow) !== -1 || (days || []).indexOf(String(dow)) !== -1) {
+        $w.append($('<option/>',{
+          value:String(dow),
+          text:formatDateDisplay(futureDate, dow)
+        }));
       }
     }
-    
-    // 如果有具体日期选项，使用带日期的显示
-    if (dateOptions.length > 0) {
-      dateOptions.forEach(function(option) {
-        $w.append($('<option/>',{value:option.value,text:option.text}));
-      });
-    } else {
-      // 降级到原来的显示方式
+    // 如果还没有任何选项，就退回仅显示星期几名称
+    if ($w.find('option').length === 1) {
       (days||[]).forEach(function(d){
         var n=parseInt(d,10); if(isNaN(n)) return; var idx=(n===0?0:(n%7));
-        $w.append($('<option/>',{value:idx,text:names[idx]}));
+        $w.append($('<option/>',{value:String(idx),text:names[idx]}));
       });
     }
   }
@@ -1004,11 +1015,17 @@
           .append($('<option/>',{value:'',text:getString('date_empty_text','请先输入邮编')}))
           .val('');
         var weekdays = data.daysOfWeek||[];
+        var serverDates = data.dates || [];
         if(weekdays.length > 0) {
-          populateWeekdays(weekdays);
+          populateWeekdays(weekdays, serverDates);
           $wdWrap.show();
           // 预填：从日期计算星期几，若在可选列表中则设值
           if (pendingPrefill && pendingPrefill.postcode === currentPc && pendingPrefill.date) {
+          // ① dates 优先：直接选中这一天
+          if (serverDates.indexOf(pendingPrefill.date) !== -1) {
+            $('#np-time-weekday').val(pendingPrefill.date);
+          } else {
+            // ② 兼容：无 dates 或该日未返回，退回 weekday 预填
             var d = new Date(pendingPrefill.date.replace(/-/g,'/'));
             if (!isNaN(d.getTime())) {
               var dow = d.getDay();
@@ -1017,6 +1034,7 @@
               }
             }
           }
+        }
         } else {
           $('#np-time-info').html('<div style="color:#fd7e14;">' + getString('no_times_text','⚠️ 该邮编暂无可配送时间') + '</div>');
           $('#np-time-step2').hide();
@@ -1107,7 +1125,11 @@
     }else{
       var wd=$('#np-time-weekday').val();
       if(!postcode || wd===''){ alert(getString('missing_weekday_alert','请完整选择邮编与时间')); return; }
-      payload.weekday=wd;
+      if (isIsoDate(wd)) {
+        payload.date = wd;      // 直接用具体日期
+      } else {
+        payload.weekday = wd;   // 兼容旧值（数字 0-6）
+      }
 
     }
     
