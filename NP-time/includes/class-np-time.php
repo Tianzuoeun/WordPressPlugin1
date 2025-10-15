@@ -543,15 +543,39 @@ trait NP_Time_Frontend {
 
 	public function ajax_get_options() {
 		check_ajax_referer( 'np_time_nonce', 'nonce' );
+
 		$postcode = sanitize_text_field( $_POST['postcode'] ?? '' );
-		$rule = NP_Time_Rules::match_postcode_rule( $postcode );
-		$local = NP_Time_Rules::is_local_delivery( $postcode );
-		$days  = isset( $rule['daysOfWeek'] ) ? array_values( array_map( 'intval', (array) $rule['daysOfWeek'] ) ) : [];
-		// 本地邮编：返回“全部未来可选日期”；非本地：按星期几规则计算可选日期
+		$rule     = NP_Time_Rules::match_postcode_rule( $postcode ); // 可能为空
+		$local    = NP_Time_Rules::is_local_delivery( $postcode );
+
+		$days = isset( $rule['daysOfWeek'] )
+			? array_values( array_map( 'intval', (array) $rule['daysOfWeek'] ) )
+			: [];
+
 		$window = (int) NP_Time_Rules::get_window_days();
-		$dates = $local ? NP_Time_Rules::build_available_dates( [ 'windowDays' => $window ] ) : NP_Time_Rules::build_available_dates( $rule );
-		wp_send_json_success( [ 'dates' => $dates, 'daysOfWeek' => $days, 'local' => $local ] );
+
+		// 统一由后端产出 dates
+		if ( $local ) {
+			// 本地：每日可送，仍按你们默认口径（明天起 window 天）
+			$dates = NP_Time_Rules::build_available_dates( [ 'windowDays' => $window ] );
+		} else {
+			// 非本地（按星期几、或特定日期等）
+			$dates = is_array($rule) ? NP_Time_Rules::build_available_dates( $rule ) : [];
+		}
+
+		// 兜底：去重 + 排序
+		$dates = array_values( array_unique( array_map( 'strval', (array) $dates ) ) );
+		sort( $dates );
+
+		$data = [
+			'dates'      => $dates,
+			'daysOfWeek' => $days,
+			'local'      => $local,
+		];
+
+		wp_send_json_success( $data );
 	}
+
 
 	public function ajax_save_choice() {
 		check_ajax_referer( 'np_time_nonce', 'nonce' );
@@ -2315,11 +2339,13 @@ class NP_Time_Rules {
 	public static function build_available_dates( $rule ) {
 		$days = (int) ( $rule['windowDays'] ?? self::get_window_days() );
 		$daysOfWeek = isset( $rule['daysOfWeek'] ) ? (array) $rule['daysOfWeek'] : [];
+
 		// 归一化星期几编码，兼容 0-6 与 1-7（7 表示周日 -> 0）
 		$daysOfWeek = array_values( array_unique( array_map( function( $n ) {
 			$n = (int) $n;
 			return $n % 7; // 0-6，7 会变为 0
 		}, $daysOfWeek ) ) );
+
 		$specificDates = isset( $rule['dates'] ) ? (array) $rule['dates'] : [];
 		$out = [];
 		$today = current_time( 'timestamp' );
@@ -2328,22 +2354,22 @@ class NP_Time_Rules {
 		$skipDateForThursday = null;
 		if (in_array(4, $daysOfWeek, true)) {
 			$todayDow = (int) date_i18n('w', $today); // 0=Sun...6=Sat
-			// 只有“今天是周三”才需要考虑“周三12:30截本周四”
-			if ($todayDow === 3) { // 3 = Wednesday
-				$hour = (int) date_i18n('G', $today); // 24小时制 0-23
+			if ($todayDow === 3) { // 周三
+				$hour = (int) date_i18n('G', $today);
 				$min  = (int) date_i18n('i', $today);
-				// >= 12:30 视为已截单，跳过“明天（本周四）”
 				if ($hour > 12 || ($hour === 12 && $min >= 30)) {
-					$skipDateForThursday = date_i18n('Y-m-d', strtotime('+1 day', $today)); // 明天
+					// 标记“明天”（= 本周四）为需跳过
+					$skipDateForThursday = date_i18n('Y-m-d', strtotime('+1 day', $today));
 				}
 			}
 		}
 
 		// 从“明天”开始构建，排除当天
 		for ( $i = 1; $i <= $days; $i++ ) {
-			$ts = strtotime( "+$i day", $today );
-			$dow = (int) date_i18n( 'w', $ts );
+			$ts   = strtotime( "+$i day", $today );
+			$dow  = (int) date_i18n( 'w', $ts );    // 0-6
 			$date = date_i18n( 'Y-m-d', $ts );
+
 			$ok = true;
 			if ( $daysOfWeek ) {
 				$ok = in_array( $dow, $daysOfWeek, true );
@@ -2351,17 +2377,23 @@ class NP_Time_Rules {
 			if ( $specificDates ) {
 				$ok = in_array( $date, $specificDates, true ) || $ok;
 			}
-			// 若命中“周四线路”且已过周三12:30，则跳过“本周四”
+
 			if ($ok) {
+				// 若命中“周四线路”且已过周三12:30，则跳过“本周四”
 				if ($skipDateForThursday && $date === $skipDateForThursday && in_array(4, $daysOfWeek, true)) {
-					// 跳过本周四，不加入
+					// skip
 				} else {
 					$out[] = $date;
 				}
 			}
 		}
-		return array_values( array_unique( $out ) );
+
+		// 去重 & 排序（稳妥）
+		$out = array_values( array_unique( $out ) );
+		sort($out);
+		return $out;
 	}
+
 
 	public static function validate_choice( $postcode, $date ) {
 		$postcode = (string) $postcode; $date = (string) $date;
