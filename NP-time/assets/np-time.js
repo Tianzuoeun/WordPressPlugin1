@@ -1175,9 +1175,9 @@
           
           if (choice.date) {
             // 检查日期是否发生了变化
-            var oldDate = NP_TIME_DATA.choice ? NP_TIME_DATA.choice.date : null;
+            var oldDate = (NP_TIME_DATA && NP_TIME_DATA.choice) ? (NP_TIME_DATA.choice.date || null) : null;
             var newDate = String(choice.date);
-            if (oldDate && oldDate !== newDate) {
+            if (oldDate !== newDate) {
               dateChanged = true;
               console.log('NP-Time: 日期发生变化，从', oldDate, '到', newDate);
             } else {

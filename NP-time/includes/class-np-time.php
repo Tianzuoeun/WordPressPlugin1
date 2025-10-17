@@ -645,6 +645,28 @@ trait NP_Time_Frontend {
 			];
 			wp_send_json_success( $response );
 		}
+
+		// —— 统一落库：把本次选择写入 Session，供早鸟功能读取 ——
+		$choice = [
+			'postcode' => $postcode,
+			'date'     => $date ?: null,   // 必须是 YYYY-MM-DD
+			'weekday'  => ($weekday !== -1 ? (int)$weekday : null),
+		];
+
+		if ( WC()->session ) {
+			WC()->session->set( 'np_time_choice', $choice );
+		}
+
+		// （可选）同时写一个 cookie，前端 gate 代码会检查这个 cookie
+		// 注意：如果你的网站是多域/子域，cookie domain/path 需按需设置
+		setcookie( 'np_time_choice', rawurlencode( wp_json_encode( $choice ) ), time()+DAY_IN_SECONDS, COOKIEPATH ?: '/', COOKIE_DOMAIN, is_ssl(), true );
+
+		// 成功返回时，把 choice 带回前端
+		wp_send_json_success( [
+			'choice'         => $choice,
+			// 如果你做了购物车商品与日期冲突检测，也可以把冲突列表带回给前端（你已有逻辑可保留）
+			// 'cart_conflicts' => $conflicts,
+		] );
 		
 		wp_send_json_success( [ 'choice' => $choice ] );
 	}
