@@ -1440,92 +1440,45 @@ trait NP_Time_Frontend {
 	}
 
 	public function wc_display_item_data( $item_data, $cart_item ) {
-		// 购物车/结账（含其 AJAX 刷新）不在产品项内显示，若其它过滤器已加入则移除
-		// 同时在用户仪表盘的订单列表页面也不显示配送信息
-		if ( ( function_exists('is_cart') && is_cart() ) || ( function_exists('is_checkout') && is_checkout() ) || $this->is_cart_or_checkout_ajax() || $this->is_store_api_context() || $this->is_my_account_orders() ) {
-			if ( is_array( $item_data ) ) {
-				$modal = $this->get_modal_settings();
-				$label_pc = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
-				$label_date = isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
-				$item_data = array_values( array_filter( $item_data, function( $row ) use ( $label_pc, $label_date ) {
-					$name = is_array( $row ) && isset( $row['name'] ) ? (string) $row['name'] : '';
-					return ! in_array( $name, [ $label_pc, $label_date ], true );
-				} ) );
-			}
-			return $item_data;
-		}
-		if ( isset( $cart_item['np_time'] ) && is_array( $cart_item['np_time'] ) ) {
-			$c = $cart_item['np_time'];
-			$modal = $this->get_modal_settings();
-			$label_pc = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
-			$label_date = isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
-			
-			// 使用格式化的日期显示
-			$formatted_date = $this->format_saved_delivery_date( $c['date'] );
-			
-			$item_data[] = [ 'name' => $label_pc, 'value' => esc_html( $c['postcode'] ) ];
-			$item_data[] = [ 'name' => $label_date, 'value' => esc_html( $formatted_date ) ];
+		// 全局关闭：不在任何地方向产品项追加“配送邮编/配送日期”
+		// 同时把其它插件可能已经加进来的同名条目也过滤掉（保险）
+		if ( is_array( $item_data ) ) {
+			$modal     = $this->get_modal_settings();
+			$label_pc  = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
+			$label_date= isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
+
+			$item_data = array_values( array_filter( $item_data, function( $row ) use ( $label_pc, $label_date ) {
+				$name = is_array( $row ) && isset( $row['name'] ) ? (string) $row['name'] : '';
+				return ! in_array( $name, [ $label_pc, $label_date ], true );
+			} ) );
 		}
 		return $item_data;
 	}
+
 
 	/**
 	 * 将购物车项目数据保存到订单项目元数据
 	 */
 	public function save_cart_item_data_to_order_item( $item, $cart_item_key, $values, $order ) {
-		if ( isset( $values['np_time'] ) && is_array( $values['np_time'] ) ) {
-			$choice = $values['np_time'];
-			$modal = $this->get_modal_settings();
-			$label_pc = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
-			$label_date = isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
-			
-			// 使用格式化的日期显示
-			$formatted_date = $this->format_saved_delivery_date( $choice['date'] );
-			
-			$item->add_meta_data( $label_pc, $choice['postcode'] );
-			$item->add_meta_data( $label_date, $formatted_date );
-		}
+		// 全局关闭：不把“配送邮编/配送日期”写入订单项目元数据（防止订单邮件/详情中出现）
+		return;
 	}
 
 	/**
 	 * 控制订单项目元数据的显示 - 在用户仪表盘页面隐藏配送信息（包括订单列表和订单详情）
 	 */
 	public function maybe_hide_order_item_meta_key( $display_key, $meta, $item ) {
-		$modal = $this->get_modal_settings();
-		$label_pc = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
-		$label_date = isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
-		
-		// 检查是否为配送相关的元数据
+		$modal     = $this->get_modal_settings();
+		$label_pc  = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
+		$label_date= isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
+
 		if ( in_array( $display_key, [ $label_pc, $label_date ], true ) ) {
-			// 多种方式检测是否在用户仪表盘页面
-			$is_my_account = false;
-			
-			// 方式1: 使用WooCommerce函数检测
-			if ( function_exists( 'is_account_page' ) && is_account_page() ) {
-				$is_my_account = true;
-			}
-			
-			// 方式2: URL检测
-			$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
-			if ( strpos( $request_uri, '/my-account/' ) !== false ) {
-				$is_my_account = true;
-			}
-			
-			// 方式3: 检查当前页面模板
-			if ( function_exists( 'wc_get_page_id' ) ) {
-				global $post;
-				if ( $post && $post->ID === wc_get_page_id( 'myaccount' ) ) {
-					$is_my_account = true;
-				}
-			}
-			
-			if ( $is_my_account ) {
-				return false; // 在用户仪表盘页面隐藏wc-item-meta中的配送信息
-			}
+			// 返回空字符串，Woo 会把这个 label 当作空处理
+			return '';
 		}
-		
 		return $display_key;
 	}
+
 
 	/**
 	 * 格式化订单项目元数据的显示值
@@ -1539,96 +1492,49 @@ trait NP_Time_Frontend {
 	 * 完全隐藏用户仪表盘页面的订单项配送元数据
 	 */
 	public function maybe_hide_entire_item_meta( $html, $item, $args ) {
-		// 检查是否在用户仪表盘页面
-		$is_my_account = false;
-		
-		if ( function_exists( 'is_account_page' ) && is_account_page() ) {
-			$is_my_account = true;
-		}
-		
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
-		if ( strpos( $request_uri, '/my-account/' ) !== false ) {
-			$is_my_account = true;
-		}
-		
-		if ( $is_my_account ) {
-			$modal = $this->get_modal_settings();
-			$label_pc = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
-			$label_date = isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
-			
-			// 从HTML中移除配送相关的元数据
-			$html = preg_replace('/<li[^>]*>\s*<strong[^>]*>' . preg_quote($label_pc, '/') . '.*?<\/li>/s', '', $html);
-			$html = preg_replace('/<li[^>]*>\s*<strong[^>]*>' . preg_quote($label_date, '/') . '.*?<\/li>/s', '', $html);
-			
-			// 如果ul元素变为空，完全移除它
-			$html = preg_replace('/<ul[^>]*class="wc-item-meta"[^>]*>\s*<\/ul>/s', '', $html);
-		}
-		
+		$modal     = $this->get_modal_settings();
+		$label_pc  = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
+		$label_date= isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
+
+		// 直接把包含这两个键的片段从 HTML 中剔除
+		$html = preg_replace('/<li[^>]*>\s*<strong>\s*(' . preg_quote($label_pc, '/') . '|' . preg_quote($label_date, '/') . ')\s*:\s*<\/strong>.*?<\/li>/u', '', (string)$html);
 		return $html;
 	}
+
 
 	/**
 	 * 在用户仪表盘页面隐藏配送相关的订单项元数据
 	 */
 	public function hide_delivery_meta_in_my_account( $hidden_meta ) {
-		// 检查是否在用户仪表盘页面
-		$is_my_account = false;
-		
-		if ( function_exists( 'is_account_page' ) && is_account_page() ) {
-			$is_my_account = true;
-		}
-		
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
-		if ( strpos( $request_uri, '/my-account/' ) !== false ) {
-			$is_my_account = true;
-		}
-		
-		if ( $is_my_account ) {
-			$modal = $this->get_modal_settings();
-			$label_pc = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
-			$label_date = isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
-			
-			// 将配送相关的元数据键添加到隐藏列表中
-			$hidden_meta[] = $label_pc;
-			$hidden_meta[] = $label_date;
-		}
-		
-		return $hidden_meta;
+		$hidden_meta = is_array($hidden_meta) ? $hidden_meta : [];
+		$modal     = $this->get_modal_settings();
+		$label_pc  = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
+		$label_date= isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
+
+		$hidden_meta[] = $label_pc;
+		$hidden_meta[] = $label_date;
+		return array_unique($hidden_meta);
 	}
+
 
 	/**
 	 * 直接过滤订单项元数据数组，移除配送相关数据
 	 */
 	public function filter_order_item_meta_data( $formatted_meta, $item ) {
-		// 检查是否在用户仪表盘页面
-		$is_my_account = false;
-		
-		if ( function_exists( 'is_account_page' ) && is_account_page() ) {
-			$is_my_account = true;
-		}
-		
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
-		if ( strpos( $request_uri, '/my-account/' ) !== false ) {
-			$is_my_account = true;
-		}
-		
-		if ( $is_my_account ) {
-			$modal = $this->get_modal_settings();
-			$label_pc = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
-			$label_date = isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
-			
-			// 过滤掉配送相关的元数据
-			$filtered_meta = [];
-			foreach ( $formatted_meta as $meta ) {
-				if ( ! in_array( $meta->key, [ $label_pc, $label_date ], true ) ) {
-					$filtered_meta[] = $meta;
-				}
+		$modal     = $this->get_modal_settings();
+		$label_pc  = isset( $modal['item_label_postcode'] ) ? (string) $modal['item_label_postcode'] : '配送邮编';
+		$label_date= isset( $modal['item_label_date'] ) ? (string) $modal['item_label_date'] : '配送日期';
+
+		$filtered = [];
+		foreach ( (array) $formatted_meta as $meta ) {
+			if ( isset($meta->key) && in_array( (string)$meta->key, [ $label_pc, $label_date ], true ) ) {
+				continue; // 跳过两条配送信息
 			}
-			return $filtered_meta;
+			$filtered[] = $meta;
 		}
-		
-		return $formatted_meta;
+		return $filtered;
 	}
+
 
 	/**
 	 * 在订单详情页面显示配送信息
