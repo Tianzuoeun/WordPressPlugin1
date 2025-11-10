@@ -816,6 +816,19 @@
     });
     observer.observe(document.body, { childList:true, subtree:true });
   }
+
+  // === 对外暴露，供片段刷新回调里复用 ===
+  window.NP_TIME = window.NP_TIME || {};
+  window.NP_TIME.injectCheckoutDeliveryInfo = ensureCartDeliveryInfoInjected;
+  window.NP_TIME.injectTipButtons = function () {
+    try {
+      if (NP_TIME_DATA && NP_TIME_DATA.tipEnabled) {
+        // 恢复小费按钮选中态
+        restoreTipSelection();
+      }
+    } catch (e) {}
+  };
+
   function openModal(){
     $('#np-time-modal').attr('aria-hidden','false');
     
@@ -1550,6 +1563,55 @@
       }, 100);
     });
   });
+
+  (function($){
+    // 统一节流，避免同一时刻多次刷新
+    var _npFragTimer = null;
+    function npSafeRefreshFragments(delay){
+      if (_npFragTimer) clearTimeout(_npFragTimer);
+      _npFragTimer = setTimeout(function(){
+        $(document.body).trigger('wc_fragment_refresh');
+        _npFragTimer = null;
+      }, typeof delay === 'number' ? delay : 0);
+    }
+
+    // 1) 应用/移除优惠券成功后刷新片段
+    $(document.body)
+      .off('applied_coupon_in_checkout.npCouponGuard removed_coupon_in_checkout.npCouponGuard')
+      .on('applied_coupon_in_checkout.npCouponGuard removed_coupon_in_checkout.npCouponGuard', function(){
+        npSafeRefreshFragments(0);
+      });
+
+    // 2) 兜底
+    $('form.checkout_coupon')
+      .off('submit.npCouponGuard')
+      .on('submit.npCouponGuard', function(){
+        npSafeRefreshFragments(400);
+      });
+
+    // 3) 片段刷新完成后，把自定义块/小费按钮等重新插回
+    $(document.body)
+      .off('wc_fragments_refreshed.npCouponGuard')
+      .on('wc_fragments_refreshed.npCouponGuard', function(){
+        try {
+          if (window.NP_TIME && typeof window.NP_TIME.injectCheckoutDeliveryInfo === 'function') {
+            window.NP_TIME.injectCheckoutDeliveryInfo();
+          } else {
+            if (typeof ensureCartDeliveryInfoInjected === 'function') {
+              ensureCartDeliveryInfoInjected();
+            }
+          }
+          if (window.NP_TIME && typeof window.NP_TIME.injectTipButtons === 'function') {
+            window.NP_TIME.injectTipButtons();
+          }
+          if (typeof initCouponPicker === 'function') {
+            initCouponPicker();
+          }
+        } catch(e){}
+      });
+
+  })(jQuery);
+
 
   $(document).on('click', '.np-time-coupon-close, .np-time-coupon-close-btn', function(e) {
     e.preventDefault();

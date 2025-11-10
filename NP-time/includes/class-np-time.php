@@ -1066,7 +1066,8 @@ trait NP_Time_Frontend {
 			add_filter( 'woocommerce_hidden_order_itemmeta', [ $this, 'hide_delivery_meta_in_my_account' ], 10, 1 );
 			add_filter( 'woocommerce_order_item_get_formatted_meta_data', [ $this, 'filter_order_item_meta_data' ], 10, 2 );
 			// 小费功能
-			add_action( 'woocommerce_cart_calculate_fees', [ $this, 'wc_add_tip_fee' ] );
+			// 原：add_action( 'woocommerce_cart_calculate_fees', [ $this, 'wc_add_tip_fee' ] );
+			add_action( 'woocommerce_cart_calculate_fees', [ $this, 'wc_add_tip_fee' ], 50 );
 			
 			// 订单处理 - 保存配送信息到订单元数据
 			add_action( 'woocommerce_checkout_order_processed', [ $this, 'save_delivery_info_to_order' ], 10, 1 );
@@ -1087,6 +1088,16 @@ trait NP_Time_Frontend {
 			
 			// 保存后台编辑的配送信息
 			add_action( 'woocommerce_process_shop_order_meta', [ $this, 'save_admin_delivery_info' ], 10, 2 );
+
+			// 保护：在应用优惠券这次 AJAX 请求的计算周期里，阻止任何“清优惠券”的副作用
+			add_action('woocommerce_before_calculate_totals', function($cart){
+				// 仅在 AJAX 的 apply_coupon 请求中生效
+				$is_applying = (defined('DOING_AJAX') && DOING_AJAX && isset($_REQUEST['wc-ajax'])
+                	&& in_array($_REQUEST['wc-ajax'], ['apply_coupon','remove_coupon'], true));
+				if ($is_applying) {
+					add_filter('np_time_block_coupon_reset', '__return_true');
+				}
+			}, 1);
 		}
 	}
 
